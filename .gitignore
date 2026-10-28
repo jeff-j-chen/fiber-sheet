@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.orig
+_*_ext*.json
+_*_ext*.path.npy
+*.zarr/
+checkpoint*.pth
