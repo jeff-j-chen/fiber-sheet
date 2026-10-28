@@ -32,8 +32,9 @@ runs on the CPU.
 
 ### Model weights
 
-The fibre model is **AFV fibre model V2** (`Qualzz20/afv_fiber_9um_v2` on Hugging Face). Put its files in
-one folder:
+The fibre model is the **AFV fibre model V2 by Qualzz20** (Apache-2.0). It continues the
+[AFV ~9 µm fibre model](https://huggingface.co/Qualzz20/afv_fiber_9um). This repository does not contain
+the model code or weights; get them from the author's Hugging Face page and put them in one folder:
 
 ```
 <model folder>/
@@ -297,3 +298,17 @@ Every script prints its options with `-h`.
   Later runs in the same area read the caches.
 - **PowerShell:** inline `python -c` code containing braces breaks; use script files. If a `.ps1` prints
   nothing when called with `&`, run it with `powershell -ExecutionPolicy Bypass -File <script.ps1>`.
+
+---
+
+## 8. Credits and licences
+
+- **Fibre model:** AFV fibre model V2 by **Qualzz20**, licensed under Apache-2.0, building on the
+  [AFV ~9 µm fibre model](https://huggingface.co/Qualzz20/afv_fiber_9um). All fibre probabilities and
+  directions used here come from this model. The model code (`model.py`) and checkpoint are not
+  redistributed in this repository; they are loaded from `AFV_MODEL_DIR`.
+- **CT data:** PHerc0846A, volume 20250728152254, from the
+  [Vesuvius Challenge](https://scrollprize.org) open data. Use of the data is subject to the Vesuvius
+  Challenge data terms.
+- **VC3D / tifxyz:** the surface and fibre formats follow VC3D (Volume Cartographer 3D).
+- **This repository:** no licence has been chosen yet, so all rights are reserved by default.
