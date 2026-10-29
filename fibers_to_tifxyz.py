@@ -1,4 +1,4 @@
-"""Turn a verified fibre set into a tifxyz surface (thin-plate spline pinned to the fibres).
+﻿"""Turn a verified fibre set into a tifxyz surface (thin-plate spline pinned to the fibres).
 
 The fibres define where the papyrus sheet really is; an existing tifxyz sheet only provides the 2D grid
 (u, v) and the normal direction. Each fibre sample is moved half a ply towards the sheet's mid-plane
@@ -9,7 +9,7 @@ the area spanned by the fibres (their convex hull plus --margin cells) is kept; 
 The output has the same grid size and scale as the reference, so renders of both line up pixel for pixel.
 
 Example
-  python fibers_to_tifxyz.py data/grid1_final2 <reference tifxyz> <paths>/fiber_tps_mysheet \
+  python fibers_to_tifxyz.py data/grid1_final7 <reference tifxyz> <paths>/fiber_tps_mysheet \
       --keep v_3253_3439_12976:z:12200:12850
 """
 import argparse

@@ -1,4 +1,4 @@
-"""Extend a traced horizontal fibre with the x-monotonic, z-locked tracer.
+﻿"""Extend a traced horizontal fibre with the x-monotonic, z-locked tracer.
 
 Horizontal fibres in this region are nearly straight in z and only bend in y as the sheet curves, while
 the free 3D tracer tends to drift up/down or hop layers where the fibre gets faint. This script
@@ -13,7 +13,7 @@ the free 3D tracer tends to drift up/down or hop layers where the fibre gets fai
      verdicts so you can see where the extension stays on the sheet.
 
 Example
-  python extend_fiber.py data/grid1_final2/h_3394_3491_13385.path.npy --segment <tifxyz folder>
+  python extend_fiber.py data/grid1_final7/h_3394_3491_13385.path.npy --segment <tifxyz folder>
 """
 import argparse
 import csv

@@ -120,7 +120,7 @@ What it does:
 Example: trace a horizontal into a copy of the included set and see where it agrees with the verticals:
 
 ```powershell
-Copy-Item -Recurse data\grid1_final2 data\my_fibers
+Copy-Item -Recurse data\grid1_final7 data\my_fibers
 python analyze_fiber.py 4500 3420 13470 --fibers data\my_fibers --segment $SHEET
 ```
 
@@ -199,11 +199,11 @@ How it works:
    uuid = folder name, bbox and area recomputed, and the same grid size and scale as the reference. Renders
    of the old and new sheet therefore line up pixel for pixel.
 
-Example: the segment built for PHerc0846A. v_3253 is only used where it is on the sheet:
+Example: a segment corrected from the included fibres:
 
 ```powershell
 $PATHS = "C:\Users\ChenJeff\.VC3D\remote_cache\open_data\projects\paths"
-python fibers_to_tifxyz.py data\grid1_final2 $SHEET "$PATHS\fiber_tps_20261028" --keep v_3253_3439_12976:z:12200:12850
+python fibers_to_tifxyz.py data\grid1_final7 $SHEET "$PATHS\fiber_tps_example"
 ```
 
 ```
@@ -230,42 +230,35 @@ neighbours. Leave it out with `--exclude name1,name2`, or restrict it with
 
 ---
 
-## 5. Included data: `data/grid1_final2/`
+## 5. Included data: `data/grid1_final7/`
 
-The verified fibre set behind `fiber_tps_20261028`, traced on PHerc0846A around x 2000–6600,
-z 11500–13700:
+The verified fibre set behind the fibre-only surface `fiber_only_20261029d`, traced on PHerc0846A around
+x 1700–6600, z 10700–13800:
 
-- 16 horizontals and 8 verticals, each as `.json` (VC3D) and `.path.npy`.
-- Analysis outputs: `crossings.csv`, `layers.json`, `groups.json`, `fibers_3d.html` and
-  `fibers_overview.png`.
-- `maps/`: CT strips at each fibre's own depth, laid out in the reference sheet's (u, v) frame.
+- 32 horizontals and 30 verticals, each as `.json` (VC3D, with the coordinate binding to volume
+  20250728152254 at full resolution, so VC3D doesn't ask for units) and `.path.npy`.
+- Analysis outputs: `crossings.csv`, `layers.json`, `fibers_3d.html` and `fibers_overview.png`.
+- Every fibre is cut to the stretch its crossings confirm; `tools/fiber_hops.py` finds one layer change in
+  the whole set (on `v_5982`, far right).
 
-Fitted layer model: S = 14 vx, p = +9 vx. 89 % of the same-layer crossings fall in the same-sheet window;
-almost all of the rest involve `v_3253`.
+The surface was built without any reference sheet:
 
-| Horizontal | z at x=4400 | Verified same-sheet x-range |
-|---|---|---|
-| h_4508_3413_13496 | 13502 | 4510 – 5144 |
-| h_3417_3513_13514 | 13448 | 3669 – 4502 |
-| h_3394_3491_13385 | 13328 | 3660 – 5701 |
-| h_3369_3475_13176 | 13091 | 3635 – 5095 |
-| h_4422_3365_12877 | 12879 | 3253 – 5048 |
-| h_3289_3435_12847 | 12760 | 3233 – 4401 |
-| h_3326_3423_12750 | 12668 | 3220 – 6205 |
-| h_3313_3375_12532 | 12473 | 4349 – 6187 |
-| h_3307_3343_12374 | 12318 | 3167 – 4941 |
-| h_3297_3319_12216 | 12188 | 3143 – 6135 |
-| h_4183_3191_11834 | 11827 | 3440 – 5480 |
-| h_3377_3480_13277, h_3458_3391_11931 | – | short pieces (≈ 3450 – 3780) |
-| h_5500_2538_11991, h_5626_2626_12882, h_5731_2585_13453 | – | right-hand pieces (5500 – 6220) |
+```powershell
+python tools\fiber_surface_tps.py data\grid1_final7 "$PATHS\fiber_only_20261029d" --verified-margin 200 --reach 1000 --no-hull --smooth 15
+```
+
+How two hard regions were resolved:
+
+- **V-bend near (3707, 3410, 11814).** Below z ≈ 12000 the left verticals (`v_2905`, `v_3631`, `v_3735`,
+  `v_3774`) are on the neighbouring layer; they are cut at z 12060. The lower region follows the layer of
+  `v_4120` (unbroken band from z 10700 to 13535), anchored by `v_4355`, `v_3039` and `v_3242`.
+- **Bend at x 5000–5650, z 12775–13300.** Horizontals hop inside the bend, so pieces stop short of it on
+  each side; `v_5577` (unbroken band) and `v_5372` anchor the right side, `h_3394` and `h_5508` cross it.
 
 Known caveats:
 
-- `v_3253_3439_12976` is on the sheet only for z ≈ 12200 – 12850. Above and below it changes layer, which
-  is why it shows red crossings.
-- Above z ≈ 13400 no horizontal stays on the sheet past x ≈ 5200 (between x 5200 and 5600 nothing is
-  verified). A vertical traced near x 5300 in that z range would help.
-- Past x ≈ 6200 there are no verticals, so the ends of the long horizontals beyond that are unverified.
+- The left half at z 11800–12060 and x 4800–5000 below z 11900 have few fibres; the surface interpolates there.
+- Beyond x ≈ 6200 and at the extrapolated edges the surface is pure extrapolation.
 
 ---
 
@@ -273,12 +266,22 @@ Known caveats:
 
 | Script | Purpose |
 |---|---|
-| `trace_fiber_3d.py` | The tracer: `--xmono`, `--one-way`, `--axis`, `--seed-radius`, `--reacquire-ahead`, … (`-h` for all) |
+| `trace_fiber_3d.py` | The tracer: `--xmono` / `--zmono` (monotonic in x / z), `--slope-rate` (sharper bends), `--one-way`, `--axis`, `--seed-radius`, … (`-h` for all) |
+| `extend_mono.py` | Extend a fibre past one end with the monotonic tracer (keeps `.orig` backups) |
+| `fiber_surface_tps.py` | Fibre-only surface: thin-plate spline y = f(x, z) on the fibres' mid-plane, no reference sheet (`--no-hull`, `--reach`, `--smooth`) |
 | `fiber_crossings.py` | Closest approach and signed normal offset for every vertical × horizontal pair → `crossings.csv` |
+| `fiber_crossings_fn.py` | Same, but the normal comes from the two fibres at each crossing (no surface needed) |
+| `fiber_trim_crossings.py` | Cut every fibre to the stretch its crossings confirm (blame-based) |
+| `fiber_hops.py` | Hop detector: fewest layer changes along fibres that explain all crossings; `--cut` keeps the longest consistent stretch |
+| `fiber_lsolve.py` | Integer layer assignment over fibre pieces |
+| `band_trim.py`, `band_check3d.py`, `hop_screen.py` | Cut / screen fibres where their own probability band breaks or changes |
+| `fiber_side_audit.py`, `fiber_order_check.py` | Per-bin side check of fibres against a surface; parallel fibres must not cross |
+| `slab_view.py`, `slab_z.py`, `fiber_section.py` | Images: fixed-x / fixed-z slabs and sections along a fibre (CT + probabilities) |
+| `fiber_meta.py` | Coordinate binding written into fibre JSON; run on a folder to add it to existing files |
 | `fiber_layers.py` | Fits spacing S, ply offset p and an integer layer per fibre → `layers.json` (use `--min-spacing 14 --max-spacing 20`) |
 | `fiber_coverage.py` | Verified same-sheet x-range of every horizontal |
 | `find_vertical_seeds.py` | Same-sheet vertical seed points along a horizontal (`h_name 5300:6400:6` scans x) |
-| `fiber_trim.py` | Copy a fibre set, cutting horizontals at x limits (`--cut name:x`) and dropping fibres (`--drop`) |
+| `fiber_trim.py` | Copy a fibre set, cutting fibres to ranges (`--cut name:x`, `--keep name:axis:lo:hi`) and dropping fibres (`--drop`) |
 | `fiber_view3d.py` | Rebuilds `fibers_3d.html` and `fibers_overview.png` |
 | `fiber_maps.py` | Horizontal / vertical fibre-depth CT maps in the sheet's (u, v) frame |
 | `fiber_ribbon.py` | Per-fibre "ribbon": CT at depths −15 … +15 vx along the fibre |

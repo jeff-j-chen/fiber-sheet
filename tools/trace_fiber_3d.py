@@ -15,6 +15,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from fiber_meta import FIBER_COORDS
 from scipy.spatial import cKDTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -47,6 +48,13 @@ ap.add_argument("--xmono", action="store_true",
                 help="horizontals: advance monotonically in x, follow y with a slope prior, keep z nearly still")
 ap.add_argument("--y-slack", type=float, default=1.0, help="--xmono: max y re-centring per step (vx)")
 ap.add_argument("--z-slack", type=float, default=0.25, help="--xmono: max z re-centring per step (vx)")
+ap.add_argument("--zmono", action="store_true",
+                help="verticals: advance monotonically in z, follow y with a slope prior, keep x nearly still")
+ap.add_argument("--x-slack", type=float, default=0.5, help="--zmono: max x re-centring per step (vx)")
+ap.add_argument("--slope-rate", type=float, default=0.1,
+                help="--xmono/--zmono: how fast the free-axis slope prior follows the fibre (0..1; higher = sharper bends)")
+ap.add_argument("--guide", help="--xmono/--zmono: height-field tifxyz y=f(x,z) (e.g. fiber_surface_tps.py output) "
+                "whose local slope replaces the y slope prior, so the walk bends with the sheet")
 args = ap.parse_args()
 if args.lock_layer and not args.segment:
     raise SystemExit("--lock-layer needs --segment (its orientation gives the layer normal)")
@@ -244,14 +252,32 @@ other = np.zeros((0, 3))
 turn_steps = int(round(100 / args.step))
 
 
-def walk_xmono(sign):
-    """Step along +/-x; re-centre only in y (slope prior) and, barely, z (very slow slope prior)."""
-    sx = sign * (1.0 if axis0[0] >= 0 else -1.0)
-    ys = axis0[1] / axis0[0] if abs(axis0[0]) > 0.3 else 0.0
+guide = None
+if args.guide:
+    from scipy.interpolate import LinearNDInterpolator
+    _G = np.stack([cv2.imread(str(Path(args.guide) / f"{c}.tif"), cv2.IMREAD_UNCHANGED) for c in "xyz"], -1)
+    _G = _G[(_G != -1).all(-1)].astype(np.float64)
+    guide = LinearNDInterpolator(_G[:, [0, 2]], _G[:, 1])
+
+
+def guide_slope(pos, step, free):
+    """Free-axis change of the guide surface over one step (None outside it)."""
+    a, b = pos.copy(), pos + step
+    g = guide(np.array([[a[0], a[2]], [b[0], b[2]]]))
+    return None if not np.isfinite(g).all() else float(g[1] - g[0])
+
+
+def walk_xmono(sign, adv=0, free=1, lock=2, free_slack=None, lock_slack=None):
+    """Step along +/- the adv axis; re-centre in the free axis (slope prior) and, barely, the lock axis."""
+    free_slack = args.y_slack if free_slack is None else free_slack
+    lock_slack = args.z_slack if lock_slack is None else lock_slack
+    sx = sign * (1.0 if axis0[adv] >= 0 else -1.0)
+    ys = axis0[free] / axis0[adv] if abs(axis0[adv]) > 0.3 else 0.0
     zs = 0.0
     # centre is measured over a fibre-sized window, but the applied move per step is clamped
     dy, dz = np.meshgrid(np.arange(-4, 4.01, 0.5), np.arange(-4, 4.01, 0.5))
-    grid = np.stack([np.zeros(dy.size), dy.ravel(), dz.ravel()], 1)
+    grid = np.zeros((dy.size, 3))
+    grid[:, free], grid[:, lock] = dy.ravel(), dz.ravel()
 
     def centre(c):
         p = sample(c + grid)
@@ -263,16 +289,22 @@ def walk_xmono(sign):
     for _ in range(5):
         off, _ = centre(pos)
         pos = pos + off
-    r = max(args.reacquire_radius, args.y_slack)
-    wy, wz = np.meshgrid(np.arange(-r, r + 1e-6, 0.5), np.arange(-2 * args.z_slack, 2 * args.z_slack + 1e-6, 0.25))
-    wide_x = np.stack([np.zeros(wy.size), wy.ravel(), wz.ravel()], 1)
+    r = max(args.reacquire_radius, free_slack)
+    wy, wz = np.meshgrid(np.arange(-r, r + 1e-6, 0.5), np.arange(-2 * lock_slack, 2 * lock_slack + 1e-6, 0.25))
+    wide_x = np.zeros((wy.size, 3))
+    wide_x[:, free], wide_x[:, lock] = wy.ravel(), wz.ravel()
     pts, probs, gap, travelled, reason = [], [], 0, 0.0, "max length"
     while travelled < args.max_length / 2:
-        step = np.array([sx * args.step, ys * sx * args.step, zs * sx * args.step])
+        step = np.zeros(3)
+        step[adv], step[free], step[lock] = sx * args.step, ys * sx * args.step, zs * sx * args.step
+        if guide is not None:
+            gs = guide_slope(pos, np.where(np.arange(3) == free, 0.0, step), free)
+            if gs is not None:
+                step[free] = gs
         off, pmax = centre(pos + step)
         if pmax >= args.threshold:
-            off[1] = np.clip(off[1], -args.y_slack, args.y_slack)
-            off[2] = np.clip(off[2], -args.z_slack, args.z_slack)
+            off[free] = np.clip(off[free], -free_slack, free_slack)
+            off[lock] = np.clip(off[lock], -lock_slack, lock_slack)
             new = pos + step + off
             gap = 0
         else:
@@ -280,10 +312,10 @@ def walk_xmono(sign):
             for ahead in np.arange(2 * args.step, args.reacquire_ahead + 0.01, args.step):
                 c2 = pos + step / args.step * ahead + wide_x
                 p2 = sample(c2)
-                k = int(np.argmax(p2 - 0.04 * np.abs(wide_x[:, 1])))
+                k = int(np.argmax(p2 - 0.04 * np.abs(wide_x[:, free])))
                 if p2[k] >= args.threshold + 0.15:
                     new, pmax = c2[k], float(p2[k])
-                    jumps.append((sign, new.copy(), ahead, float(abs(wide_x[k, 1]))))
+                    jumps.append((sign, new.copy(), ahead, float(abs(wide_x[k, free]))))
                     gap = 0
                     break
             if new is None:
@@ -292,9 +324,9 @@ def walk_xmono(sign):
                 if gap > args.max_gap:
                     reason = f"probability below {args.threshold} for {args.max_gap} steps"
                     break
-        ddx = new[0] - pos[0]
-        ys = 0.9 * ys + 0.1 * (new[1] - pos[1]) / ddx
-        zs = 0.98 * zs + 0.02 * (new[2] - pos[2]) / ddx
+        ddx = new[adv] - pos[adv]
+        ys = (1 - args.slope_rate) * ys + args.slope_rate * (new[free] - pos[free]) / ddx
+        zs = 0.98 * zs + 0.02 * (new[lock] - pos[lock]) / ddx
         travelled += float(np.linalg.norm(new - pos))
         pos = new
         pts.append(pos.copy())
@@ -303,8 +335,9 @@ def walk_xmono(sign):
 
 
 for sign in ((1,) if args.one_way else (1, -1)):
-    if args.xmono:
-        pts, probs, gap, reason, pos = walk_xmono(sign)
+    if args.xmono or args.zmono:
+        pts, probs, gap, reason, pos = (walk_xmono(sign) if args.xmono else
+                                        walk_xmono(sign, 2, 1, 0, args.y_slack, args.x_slack))
         k = len(pts) - gap
         halves.append((np.array(pts[:max(k, 0)]).reshape(-1, 3), np.array(probs[:max(k, 0)])))
         reasons.append(f"{'+' if sign > 0 else '-'} end at {pos.round(1).tolist()}: {reason}")
@@ -393,7 +426,7 @@ cps, lps = xyz[ctrl].round(3).tolist(), xyz[line].round(3).tolist()
 cps[int(np.where(ctrl == seed_i)[0][0])] = target.tolist()
 lps[int(np.where(line == seed_i)[0][0])] = target.tolist()
 out = Path(args.out)
-out.write_text(json.dumps({"type": "vc3d_fiber", "version": 1, "control_points": cps, "line_points": lps}, indent=1))
+out.write_text(json.dumps({"type": "vc3d_fiber", "version": 1, **FIBER_COORDS, "control_points": cps, "line_points": lps}, indent=1))
 np.save(out.with_suffix(".path.npy"), np.column_stack([xyz, prob, arc]).astype(np.float32))
 print(f"wrote {out} ({len(cps)} control points, {len(lps)} line points)")
 

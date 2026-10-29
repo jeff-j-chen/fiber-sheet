@@ -16,15 +16,18 @@ ap.add_argument("fibers")
 ap.add_argument("--ply", type=float, default=9.0)
 ap.add_argument("--spacing", type=float, default=14.0)
 ap.add_argument("--zat", type=float, default=4400.0, help="report each fibre's z at this x")
+ap.add_argument("--family", choices=["h", "v"], default="h",
+                help="v: rank verticals by their verified z-span (crossings ordered by z)")
 args = ap.parse_args()
 fdir = Path(args.fibers)
+key, other, ax = ("horizontal", "vertical", 0) if args.family == "h" else ("vertical", "horizontal", 2)
 
 rows = [r for r in csv.DictReader(open(fdir / "crossings.csv")) if r["verdict"] != "no overlap"]
 by_h = {}
 for r in rows:
     at = [float(v) for v in r["at"].strip("[]").split()]
     good = abs(float(r["normal_offset_vx"]) - args.ply) < args.spacing / 2
-    by_h.setdefault(r["horizontal"], []).append((at[0], good, float(r["normal_offset_vx"]), r["vertical"]))
+    by_h.setdefault(r[key], []).append((at[ax], good, float(r["normal_offset_vx"]), r[other]))
 
 out = []
 for h, cs in by_h.items():
@@ -42,9 +45,15 @@ for h, cs in by_h.items():
     P = np.load(fdir / f"{h}.path.npy")[:, :3]
     o = np.argsort(P[:, 0])
     z = np.interp(args.zat, P[o, 0], P[o, 2]) if P[:, 0].min() <= args.zat <= P[:, 0].max() else float("nan")
-    marks = " ".join(f"{'+' if g else 'x'}{v.split('_')[1]}:{off:+.0f}" for _, g, off, v in cs)
-    out.append((z, h, best, P[:, 0].min(), P[:, 0].max(), marks))
+    if args.family == "v":
+        z = float(np.median(P[:, 0]))
+    marks = " ".join(f"{'+' if g else 'x'}{v.split('_')[-1 if args.family == 'v' else 1]}:{off:+.0f}"
+                     for _, g, off, v in cs)
+    good_n = sum(c[1] for c in cs)
+    out.append((z, h, best, P[:, ax].min(), P[:, ax].max(), f"{good_n}/{len(cs)} good  " + marks))
 
+lab = "x" if args.family == "h" else "z"
 for z, h, (span, a, b), x0, x1, marks in sorted(out, key=lambda t: -t[0] if np.isfinite(t[0]) else 0):
-    ver = f"verified x {a:5.0f}..{b:5.0f} ({span:4.0f})" if a is not None else "verified -"
-    print(f"{h:20s} z@{args.zat:.0f} {z:7.0f}  trace x {x0:5.0f}..{x1:5.0f}  {ver}  | {marks}")
+    ver = f"verified {lab} {a:5.0f}..{b:5.0f} ({span:4.0f})" if a is not None else "verified -"
+    where = f"z@{args.zat:.0f} {z:7.0f}" if args.family == "h" else f"median x {z:5.0f}"
+    print(f"{h:22s} {where}  trace {lab} {x0:5.0f}..{x1:5.0f}  {ver}  | {marks}")
