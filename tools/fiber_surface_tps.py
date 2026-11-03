@@ -40,6 +40,12 @@ ap.add_argument("--verified-margin", type=float,
                 help="use each fibre only between its first and last same-sheet crossing, plus this many vx")
 ap.add_argument("--exclude", default="", help="comma-separated fibre names to leave out")
 ap.add_argument("--compare", help="old tifxyz: report how far it is from the new surface (not used in the fit)")
+ap.add_argument("--plane", choices=["mid", "h"], default="mid",
+                help="fit the sheet mid-plane, or the horizontal-fibre face (verticals moved a full ply onto it)")
+ap.add_argument("--hweight", type=float, default=1.0,
+                help="horizontal samples get --smooth / hweight (they are followed more closely than verticals)")
+ap.add_argument("--hstep", type=float, help="sample spacing for horizontals (default --step)")
+ap.add_argument("--fweight", default="", help="prefix:w,... these fibres' samples get --smooth / w (followed more closely)")
 args = ap.parse_args()
 fdir, out = Path(args.fibers), Path(args.out)
 L = json.loads((fdir / "layers.json").read_text()) if (fdir / "layers.json").exists() else {}
@@ -63,7 +69,7 @@ for p in sorted(fdir.glob("*.path.npy")):
         continue
     a = np.load(p).astype(np.float64)
     xyz, prob, arc = a[:, :3], a[:, 3], a[:, 4]
-    s = np.arange(args.trim, arc[-1] - args.trim, args.step)
+    s = np.arange(args.trim, arc[-1] - args.trim, (args.hstep or args.step) if name[0] == "h" else args.step)
     P = np.stack([np.interp(s, arc, xyz[:, c]) for c in range(3)], 1)
     m = np.interp(s, arc, prob) >= args.min_prob
     if args.verified_margin is not None:
@@ -81,7 +87,11 @@ print(f"{len(pts)} samples from {len(set(names))} fibres; ply offset {ply:g} vx"
 
 def fit(P):
     # coordinates in grid cells, so --smooth has the same meaning as in fiber_sheet_tps.py
-    rbf = RBFInterpolator(P[:, [0, 2]] * args.scale, P[:, 1], kernel="thin_plate_spline", smoothing=args.smooth)
+    sm = np.where(fam == "h", args.smooth / args.hweight, args.smooth)
+    for spec in [s for s in args.fweight.split(",") if s]:
+        pre, w = spec.rsplit(":", 1)
+        sm = np.where(np.char.startswith(names, pre), sm / float(w), sm)
+    rbf = RBFInterpolator(P[:, [0, 2]] * args.scale, P[:, 1], kernel="thin_plate_spline", smoothing=sm)
     return lambda xz: rbf(np.asarray(xz) * args.scale)
 
 
@@ -101,7 +111,10 @@ for it in range(args.iterations):
     d = ((pts - np.column_stack([xz[:, 0], f(xz), xz[:, 1]])) * n).sum(1)
     # which side the horizontal ply is on, along this surface's normal
     side = np.sign(np.median(d[fam == "h"]) - np.median(d[fam == "v"])) or 1.0
-    shift = np.where(fam == "h", -side, side) * ply / 2
+    if args.plane == "h":
+        shift = np.where(fam == "h", 0.0, side * ply)
+    else:
+        shift = np.where(fam == "h", -side, side) * ply / 2
     target = pts + shift[:, None] * normal(f, pts[:, [0, 2]])
     f = fit(target)
     print(f"  iteration {it + 1}: horizontals {np.median(d[fam == 'h']):+.1f} vx, verticals "

@@ -48,8 +48,15 @@ class CachedHttpStore(MutableMapping):
             return self._download(key, path)
 
     def _download(self, key, path):
-        for attempt in range(4):
-            r = self._session().get(f"{self.url}/{key}", timeout=60)
+        for attempt in range(6):
+            try:
+                r = self._session().get(f"{self.url}/{key}", timeout=60)
+            except (requests.ConnectionError, requests.Timeout):
+                if attempt == 5:
+                    raise
+                self.local.s = requests.Session()
+                time.sleep(2 + 2 * attempt)
+                continue
             if r.status_code in (403, 404):
                 raise KeyError(key)
             r.raise_for_status()

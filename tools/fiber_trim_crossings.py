@@ -101,14 +101,16 @@ for pth in sorted(src.glob("*.path.npy")):
     if args.family != "both" and name[0] != args.family:
         if src.resolve() != dst.resolve():
             shutil.copy(pth, dst / pth.name)
-            shutil.copy(src / f"{name}.json", dst / f"{name}.json")
+            if (src / f"{name}.json").exists():
+                shutil.copy(src / f"{name}.json", dst / f"{name}.json")
         continue
     if not any(g for _, g, _ in cs):
         print(f"{name:22s} no same-sheet crossing ({len(cs)} crossings)" +
               (" -> dropped" if args.drop_unverified else " -> kept unchanged"))
         if not args.drop_unverified and src.resolve() != dst.resolve():
             shutil.copy(pth, dst / pth.name)
-            shutil.copy(src / f"{name}.json", dst / f"{name}.json")
+            if (src / f"{name}.json").exists():
+                shutil.copy(src / f"{name}.json", dst / f"{name}.json")
         continue
     best, i = None, 0
     while i < len(cs):

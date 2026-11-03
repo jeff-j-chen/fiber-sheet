@@ -21,6 +21,7 @@ ap.add_argument("fiber")
 ap.add_argument("--end", choices=["+", "-"], required=True)
 ap.add_argument("--backoff", type=float, default=50.0)
 ap.add_argument("--extra", default="--reacquire-ahead 60 --seed-radius 2")
+ap.add_argument("--free", action="store_true", help="free 3D tracer instead of --xmono/--zmono (follows strong curves)")
 args = ap.parse_args()
 src = Path(args.fiber)
 name = src.name[:-len(".path.npy")]
@@ -39,7 +40,7 @@ axis = ["0", "0", "0"]
 axis[ax] = str(float(sign))
 tmp = src.parent / f"_{name}_ext.json"
 cmd = [sys.executable, str(Path(__file__).resolve().parent / "trace_fiber_3d.py"), *map(str, a[i_cut, :3]), fam, str(tmp),
-       "--xmono" if fam == "h" else "--zmono", "--one-way", "--axis", *axis, *args.extra.split()]
+       *([] if args.free else ["--xmono" if fam == "h" else "--zmono"]), "--one-way", "--axis", *axis, *args.extra.split()]
 r = subprocess.run(cmd, capture_output=True, text=True)
 npy = tmp.with_suffix(".path.npy")
 if not npy.exists():
