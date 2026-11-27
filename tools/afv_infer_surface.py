@@ -26,8 +26,7 @@ MODEL_DIR = Path(os.environ.get("AFV_MODEL_DIR", Path.home() / ".VC3D" / "afv_mo
 sys.path.insert(0, str(MODEL_DIR))
 from model import load_model, normalize_ct  # noqa: E402
 
-CT_URL = ("https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/PHerc0846A/volumes/"
-          "20250728152254-9.362um-1.2m-113keV-masked.zarr")
+from afv_core import CT_URL, DEVICE  # noqa: E402  (volume/device set by env vars)
 PATCH, STRIDE, MARGIN = 128, 96, 16          # tile core = [MARGIN, PATCH-MARGIN) along each axis
 NORMAL_OFFSETS = np.arange(-4, 5, dtype=np.float32)
 
@@ -84,7 +83,7 @@ if args.dry_run:
 
 # ---- inference ----------------------------------------------------------------------------
 out.mkdir(parents=True, exist_ok=True)
-dev = "cuda"
+dev = DEVICE
 model = load_model(MODEL_DIR, device=dev)
 vt = np.zeros(len(ys), np.float32)
 hz = np.zeros(len(ys), np.float32)
@@ -106,7 +105,7 @@ for i, key in enumerate(groups):
     if vol.max() == 0:
         continue
     x = torch.from_numpy(vol)[None, None].to(dev)
-    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+    with torch.inference_mode(), torch.autocast(dev, dtype=torch.float16, enabled=dev != "cpu"):
         o = model(normalize_ct(x))
     prob = torch.softmax(o["seg"].float(), 1)[0]               # 4,Z,Y,X
     d = F.normalize(o["direction"].float()[0], dim=0)          # 3,Z,Y,X (x,y,z)

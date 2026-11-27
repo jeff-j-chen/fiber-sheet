@@ -12,10 +12,12 @@ import torch
 import zarr
 
 ROOT = Path(os.environ.get("VC3D_HOME", Path.home() / ".VC3D"))
-VOLUME_ID = "20250728152254"
-CT_URL = ("https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/PHerc0846A/volumes/"
+SCROLL = os.environ.get("AFV_SCROLL", "PHerc0846A")
+VOLUME_ID = os.environ.get("AFV_VOLUME_ID", "20250728152254")
+CT_URL = os.environ.get("AFV_CT_URL", "https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/PHerc0846A/volumes/"
           f"{VOLUME_ID}-9.362um-1.2m-113keV-masked.zarr")
-STORE = ROOT / "afv_predictions" / f"PHerc0846A_{VOLUME_ID}.zarr"
+STORE = ROOT / "afv_predictions" / f"{SCROLL}_{VOLUME_ID}.zarr"
+DEVICE = os.environ.get("AFV_DEVICE") or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 CT_CACHE = ROOT / "afv_ct_cache" / VOLUME_ID
 # folder with model.py, plans.json, dataset.json and checkpoint_final.pth
 MODEL_DIR = Path(os.environ.get("AFV_MODEL_DIR", ROOT / "afv_model"))
@@ -144,14 +146,14 @@ class Predictor:
             import sys
             sys.path.insert(0, str(MODEL_DIR))
             from model import load_model
-            self.model = load_model(MODEL_DIR, device="cuda")
+            self.model = load_model(MODEL_DIR, device=DEVICE)
         from model import normalize_ct
         core = tuple(slice(t[k] * CORE, min((t[k] + 1) * CORE, self.shape[k])) for k in range(3))
         n = [c.stop - c.start for c in core]
         c = (slice(MARGIN, MARGIN + n[0]), slice(MARGIN, MARGIN + n[1]), slice(MARGIN, MARGIN + n[2]))
         if vol[c].max() > 0:
-            x = torch.from_numpy(vol)[None, None].cuda()
-            with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+            x = torch.from_numpy(vol)[None, None].to(DEVICE)
+            with torch.inference_mode(), torch.autocast(DEVICE, dtype=torch.float16, enabled=DEVICE != "cpu"):
                 o = self.model(normalize_ct(x))
             prob = torch.softmax(o["seg"].float(), 1)[0][(slice(None),) + c]
             d = torch.nn.functional.normalize(o["direction"].float()[0], dim=0)[(slice(None),) + c]

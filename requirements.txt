@@ -8,3 +8,4 @@ plotly
 matplotlib
 torch>=2.6
 dynamic-network-architectures==0.4.4
+fsspec[http]

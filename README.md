@@ -63,6 +63,27 @@ open data (the URL is in `tools/afv_core.py`). Nothing has to be downloaded by h
 
 Set `VC3D_HOME` to move both caches somewhere other than `~/.VC3D`.
 
+### Other scrolls and devices
+
+The volume and the device can be set with environment variables, read by `tools/afv_core.py` and used by every
+script that predicts tiles (`trace_fiber_3d.py`, `afv_infer_band.py`, `afv_infer_surface.py`):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AFV_SCROLL` | `PHerc0846A` | names the prediction store (`<scroll>_<volume>.zarr`) |
+| `AFV_VOLUME_ID` | `20250728152254` | names the CT cache folder and the store |
+| `AFV_CT_URL` | the PHerc0846A 9.362 µm zarr | the OME-Zarr volume to read (level `0` is used) |
+| `AFV_DEVICE` | `cuda`, else `mps`, else `cpu` | where the model runs; float16 autocast is off on the CPU |
+
+Example for PHerc0841 (9.366 µm) on an Apple-silicon Mac:
+
+```bash
+export AFV_SCROLL=PHerc0841 AFV_VOLUME_ID=20250821151531
+export AFV_CT_URL=https://vesuvius-challenge-open-data.s3.amazonaws.com/PHerc0841/volumes/20250821151531-9.366um-1.2m-113keV-masked.zarr
+```
+
+On an M4 Pro (MPS) one 128³ patch takes about 2.3 s.
+
 ### A reference sheet
 
 All three scripts take a **tifxyz segment** (a folder with `x.tif`, `y.tif`, `z.tif`, `meta.json`). Only

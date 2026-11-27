@@ -30,12 +30,7 @@ MODEL_DIR = Path(os.environ.get("AFV_MODEL_DIR", Path.home() / ".VC3D" / "afv_mo
 sys.path.insert(0, str(MODEL_DIR))
 from model import load_model, normalize_ct  # noqa: E402
 
-ROOT = Path.home() / ".VC3D"
-VOLUME_ID = "20250728152254"
-CT_URL = ("https://vesuvius-challenge-open-data.s3.us-east-1.amazonaws.com/PHerc0846A/volumes/"
-          f"{VOLUME_ID}-9.362um-1.2m-113keV-masked.zarr")
-STORE = ROOT / "afv_predictions" / f"PHerc0846A_{VOLUME_ID}.zarr"
-CT_CACHE = ROOT / "afv_ct_cache" / VOLUME_ID
+from afv_core import CT_CACHE, CT_URL, DEVICE, ROOT, STORE, VOLUME_ID  # noqa: E402  (volume/device set by env vars)
 CORE, MARGIN = 96, 16
 PATCH = CORE + 2 * MARGIN
 
@@ -160,7 +155,7 @@ def read_patch(t):
     return t, vol
 
 
-model = load_model(MODEL_DIR, device="cuda")
+model = load_model(MODEL_DIR, device=DEVICE)
 t0 = time.time()
 skipped_empty = 0
 with ThreadPoolExecutor(max_workers=6) as pool, open(done_file, "a") as log:
@@ -175,8 +170,8 @@ with ThreadPoolExecutor(max_workers=6) as pool, open(done_file, "a") as log:
         core = tuple(slice(t[k] * CORE, min((t[k] + 1) * CORE, shape[k])) for k in range(3))
         n = [c.stop - c.start for c in core]
         if vol[MARGIN:MARGIN + n[0], MARGIN:MARGIN + n[1], MARGIN:MARGIN + n[2]].max() > 0:
-            x = torch.from_numpy(vol)[None, None].cuda()
-            with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+            x = torch.from_numpy(vol)[None, None].to(DEVICE)
+            with torch.inference_mode(), torch.autocast(DEVICE, dtype=torch.float16, enabled=DEVICE != "cpu"):
                 o = model(normalize_ct(x))
             c = (slice(MARGIN, MARGIN + n[0]), slice(MARGIN, MARGIN + n[1]), slice(MARGIN, MARGIN + n[2]))
             prob = torch.softmax(o["seg"].float(), 1)[0][(slice(None),) + c]
